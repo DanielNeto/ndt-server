@@ -46,9 +46,9 @@ mkdir -p "${DATA_DIR}"
 #  --tcpinfo.eventsocket=/var/local/tcpeventsocket.sock \
 #  &
 
-while [[ ! -e /var/local/tcpeventsocket.sock ]]; do
-  sleep 1
-done
+#while [[ ! -e /var/local/tcpeventsocket.sock ]]; do
+#  sleep 1
+#done
 
 # Start the traceroute service.
 mkdir -p "${DATA_DIR}"/traceroute

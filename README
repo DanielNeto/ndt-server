@@ -1,0 +1,21 @@
+## Setup
+
+### Primary setup & running (Linux)
+
+Prepare the runtime environment
+
+```bash
+install -d certs datadir var-spool-ndt var-local
+```
+
+To run the server locally, generate local self signed certificates (`key.pem`
+and `cert.pem`) using bash and OpenSSL
+
+```bash
+./gen_local_test_certs.bash
+```
+
+```bash
+docker-compose build
+docker-compose up -d
+```

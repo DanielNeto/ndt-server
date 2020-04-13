@@ -1,0 +1,22 @@
+version: "3.7"
+services:
+  ndt-server:
+    image: danielneto/ndt-server:1.0
+    build:
+      context: ./
+    container_name: ndt-server
+    hostname: teste.medidor.br
+    tty: true
+    stdin_open: true
+    volumes:
+      - $PWD/certs:/certs:ro
+      - $PWD/var-spool-ndt:/var/spool/ndt:rw
+      - $PWD/datadir:/datadir:rw
+      - $PWD/var-local:/var/local:rw
+    command: [
+      "-cert", "/certs/cert.pem",
+      "-key", "/certs/key.pem",
+      "-datadir", "/datadir",
+      "-ndt7_addr", ":4443",
+      "-ndt7_addr_cleartext", ":8080"
+    ]
