@@ -23,6 +23,12 @@
 
 set -euxo pipefail
 
+if [ ! -z "$TZ" ]
+then
+  ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
+  echo $TZ > /etc/timezone
+  dpkg-reconfigure --frontend noninteractive tzdata
+fi
 
 # Set up the filesystem.
 
