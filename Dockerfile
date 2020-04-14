@@ -10,6 +10,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 RUN ln -fs /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime && \
     dpkg-reconfigure --frontend noninteractive tzdata
 
+COPY html/* /html/
 COPY nginx/default /etc/nginx/sites-available/
 
 COPY start.sh /start.sh
