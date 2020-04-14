@@ -119,8 +119,8 @@
     //this function reads the data sent back by the test and updates the UI
     function updateUI(info, type){
       
-      
-      I("ip").textContent=info.ConnectionInfo.Client;
+      var ipporta = info.ConnectionInfo.Client;
+      I("ip").textContent=ipporta.split(":")[0]; 
 
       if (type === 'download') {
         const elapsed = info.TCPInfo.ElapsedTime

@@ -5,3 +5,10 @@ server {
 	listen [::]:80 default_server;
         return 301 https://$hostname:4443/static/ndt7.html;
 }
+server {
+        listen 443 ssl default_server;
+        listen [::]:443 ssl default_server;
+        ssl_certificate /certs/wildcard_medidor.rnp.br.cer;
+        ssl_certificate_key /certs/wildcard_medidor.rnp.br.key;
+        return 301 https://$hostname:4443/static/ndt7.html;
+}
