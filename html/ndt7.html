@@ -15,7 +15,7 @@
     <div id="test">
       <div class="testGroup">
         <div class="testArea2">
-          <div class="testName">Ping</div>
+          <div class="testName">RTT</div>
           <div id="pingText" class="meterText" style="color:#AA6060"></div>
           <div class="unit">ms</div>
         </div>
@@ -23,6 +23,11 @@
           <div class="testName">Jitter</div>
           <div id="jitText" class="meterText" style="color:#AA6060"></div>
           <div class="unit">ms</div>
+        </div>
+        <div class="testArea2">
+          <div class="testName">Perda</div>
+          <div id="lossText" class="meterText" style="color:#AA6060"></div>
+          <div class="unit">%</div>
         </div>
       </div>
       <div class="testGroup">
@@ -72,6 +77,9 @@
 
     var statsCount = 0;
     var previousRTT = 0;
+    var elapsedDownload = 0;
+    var elapsedUpload = 0;
+    var testInterval;
 
     function I(i) { return document.getElementById(i); }
     function mbpsToAmount(s) {
@@ -131,40 +139,42 @@
         runDownload(function () { runUpload(); })
         I("startStopBtn").disabled = true;
         I("startStopBtn").className = "running";
+
+        testInterval = setInterval(updateUI, 500);
       }
     }
 
     function stopped() {
       I("startStopBtn").className = "";
       I("startStopBtn").disabled = false;
+      console.log(JSON. stringify(testResults));
+      clearInterval(testInterval);
     }
 
     //this function reads the data sent back by the test and updates the UI
-    function updateUI(clientIp, elapsed, type, speed, rtt, jitter) {
+    function updateUI() {
 
-      I("ip").textContent = clientIp;
+      I("ip").textContent = testResults.clientIp;
 
-      let progress = elapsed / 10e06;
+      let progDownload = elapsedDownload / 10e06;
 
-      if (type === 'download') {
-        I("dlText").textContent = format(speed);
-        drawMeter(I("dlMeter"), mbpsToAmount(Number(speed)), meterBk, dlColor, Number(progress), progColor);
-      }
+      I("dlText").textContent = format(testResults.download);
+      drawMeter(I("dlMeter"), mbpsToAmount(Number(testResults.download)), meterBk, dlColor, Number(progDownload), progColor);
 
-      if (type === 'upload') {
-        I("ulText").textContent = format(speed);
-        drawMeter(I("ulMeter"), mbpsToAmount(Number(speed)), meterBk, ulColor, Number(progress), progColor);
-      }
+      let progUpload = elapsedUpload / 10e06;
 
-      I("pingText").textContent = format(rtt);
-      I("jitText").textContent = format(jitter);
+      I("ulText").textContent = format(testResults.upload);
+      drawMeter(I("ulMeter"), mbpsToAmount(Number(testResults.upload)), meterBk, ulColor, Number(progUpload), progColor);
+ 
+      I("pingText").textContent = format(testResults.latency);
+      I("jitText").textContent = format(testResults.jitter);
+      I("lossText").textContent = format(testResults.loss*100);
     }
 
     function saveData(info, type) {
 
       statsCount += 1;
       var speed = 0;
-      var elapsed = 0;
 
       //Basic Info
       let clientIpPorta = info.ConnectionInfo.Client;
@@ -174,9 +184,9 @@
       testResults.serverIp = serverIpPorta.split(":")[0];
 
       if (type === 'download') {
-        elapsed = info.TCPInfo.ElapsedTime;
+        elapsedDownload = info.TCPInfo.ElapsedTime;
         speed = info.TCPInfo.BytesAcked * 8;
-        speed /= elapsed;
+        speed /= elapsedDownload;
 
         let sent = info.TCPInfo.BytesSent;
         let retrans = info.TCPInfo.BytesRetrans;
@@ -188,9 +198,9 @@
       }
 
       if (type === 'upload') {
-        elapsed = info.TCPInfo.ElapsedTime;
+        elapsedUpload = info.TCPInfo.ElapsedTime;
         speed = info.TCPInfo.BytesReceived * 8;
-        speed /= elapsed;
+        speed /= elapsedUpload;
 
         testResults.upload = speed;
 
@@ -209,8 +219,6 @@
         testResults.jitter += (newJitter - oldJitter) / (statsCount - 1);
       }
       previousRTT = newLatency;
-
-      updateUI(testResults.clientIp, elapsed, type, speed, testResults.latency, testResults.jitter);
 
       //ref for maths and magics
       //http://datagenetics.com/blog/november22017/index.html
