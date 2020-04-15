@@ -3,6 +3,7 @@
 
 <head>
   <script type='text/javascript' src='ndt7-core.js'></script>
+  <script type='text/javascript' src='jquery-1.12.1.min.js'></script>
   <link rel="stylesheet" type="text/css" href="style.css">
   <meta charset='utf-8'>
   <title>ndt7 Speed Test</title>
@@ -69,8 +70,8 @@
       "endTime": "",
       "serverIp": "",
       "timestamp": "",
-      "uuid_download": "",
-      "uuid_upload": "",
+      "uuidDownload": "",
+      "uuidUpload": "",
       "ubsId": "",
       "userBw": 0
     };
@@ -123,6 +124,30 @@
       }
     }
 
+    function clearVariables() {
+      testResults = {
+        "download": 0,
+        "upload": 0,
+        "jitter": 0,
+        "latency": 0,
+        "loss": 0,
+        "clientIp": "",
+        "clientPort": "",
+        "startTime": "",
+        "endTime": "",
+        "serverIp": "",
+        "timestamp": "",
+        "uuidDownload": "",
+        "uuidUpload": "",
+        "ubsId": "",
+        "userBw": 0
+      };
+      statsCount = 0;
+      previousRTT = 0;
+      elapsedDownload = 0;
+      elapsedUpload = 0;
+    }
+
     function initUI() {
       drawMeter(I("dlMeter"), 0, meterBk, dlColor, 0);
       drawMeter(I("ulMeter"), 0, meterBk, ulColor, 0);
@@ -135,6 +160,7 @@
 
     function start() {
       if (I("startStopBtn").className !== "running") {
+        clearVariables();
         initUI();
         runDownload(function () { runUpload(); })
         I("startStopBtn").disabled = true;
@@ -147,8 +173,9 @@
     function stopped() {
       I("startStopBtn").className = "";
       I("startStopBtn").disabled = false;
-      console.log(JSON. stringify(testResults));
+      console.log(JSON.stringify(testResults));
       clearInterval(testInterval);
+      //saveDataDB();
     }
 
     //this function reads the data sent back by the test and updates the UI
@@ -165,10 +192,10 @@
 
       I("ulText").textContent = format(testResults.upload);
       drawMeter(I("ulMeter"), mbpsToAmount(Number(testResults.upload)), meterBk, ulColor, Number(progUpload), progColor);
- 
+
       I("pingText").textContent = format(testResults.latency);
       I("jitText").textContent = format(testResults.jitter);
-      I("lossText").textContent = format(testResults.loss*100);
+      I("lossText").textContent = format(testResults.loss * 100);
     }
 
     function saveData(info, type) {
@@ -177,11 +204,13 @@
       var speed = 0;
 
       //Basic Info
-      let clientIpPorta = info.ConnectionInfo.Client;
-      testResults.clientIp = clientIpPorta.split(":")[0];
-      testResults.clientPort = clientIpPorta.split(":")[1];
-      let serverIpPorta = info.ConnectionInfo.Server;
-      testResults.serverIp = serverIpPorta.split(":")[0];
+      let clientIpPorta = info.ConnectionInfo.Client.split(":");
+      testResults.clientPort = clientIpPorta.pop();
+      testResults.clientIp = clientIpPorta.join(":");
+      
+      let serverIpPorta = info.ConnectionInfo.Server.split(":");
+      serverIpPorta.pop();
+      testResults.serverIp = serverIpPorta.join(":");
 
       if (type === 'download') {
         elapsedDownload = info.TCPInfo.ElapsedTime;
@@ -194,7 +223,7 @@
         testResults.download = speed;
         testResults.loss = retrans / sent;  //only on download
 
-        testResults.uuid_download = info.ConnectionInfo.UUID;
+        testResults.uuidDownload = info.ConnectionInfo.UUID;
       }
 
       if (type === 'upload') {
@@ -204,7 +233,7 @@
 
         testResults.upload = speed;
 
-        testResults.uuid_upload = info.ConnectionInfo.UUID;
+        testResults.uuidUpload = info.ConnectionInfo.UUID;
       }
 
       let oldLatency = testResults.latency;
@@ -232,6 +261,20 @@
         "ubsId": "",
         "userBw": 0
       };*/
+    }
+
+    function saveDataDB() {
+      $.ajax("/ubs", {
+        data: JSON.stringify(testResults),
+        method: "POST",
+        contentType: "application/json",
+        success: function (data, status, xhr) {// success callback function
+          console.log("Data saved!")
+        },
+        error: function (a, b, c) {
+          console.log("Data not saved!")
+        }
+      });
     }
 
     function runSomething(testName, callback) {
