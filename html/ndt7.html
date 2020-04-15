@@ -1,17 +1,19 @@
 <!doctype html>
 <html lang='en'>
+
 <head>
   <script type='text/javascript' src='ndt7-core.js'></script>
   <link rel="stylesheet" type="text/css" href="style.css">
   <meta charset='utf-8'>
   <title>ndt7 Speed Test</title>
 </head>
+
 <body>
   <h1>NDT-Server Example</h1>
   <div id="testWrapper">
     <button type="button" id="startStopBtn" onclick="start()"></button>
     <div id="test">
-          <div class="testGroup">
+      <div class="testGroup">
         <div class="testArea2">
           <div class="testName">Ping</div>
           <div id="pingText" class="meterText" style="color:#AA6060"></div>
@@ -45,128 +47,198 @@
   <script type='text/javascript'>
     /* jshint esversion: 6, asi: true */
     /* globals ndt7core */
-    var meterBk=/Trident.*rv:(\d+\.\d+)/i.test(navigator.userAgent)?"#EAEAEA":"#80808040";
-    var dlColor="#6060AA",
-      ulColor="#616161";
-    var progColor=meterBk;
+    var meterBk = /Trident.*rv:(\d+\.\d+)/i.test(navigator.userAgent) ? "#EAEAEA" : "#80808040";
+    var dlColor = "#6060AA",
+      ulColor = "#616161";
+    var progColor = meterBk;
 
-    function I(i){return document.getElementById(i);}
-    function mbpsToAmount(s){
-      return 1-(1/(Math.pow(1.3,Math.sqrt(s))));
+    var testResults = {
+      "download": 0,
+      "upload": 0,
+      "jitter": 0,
+      "latency": 0,
+      "loss": 0,
+      "clientIp": "",
+      "clientPort": "",
+      "startTime": "",
+      "endTime": "",
+      "serverIp": "",
+      "timestamp": "",
+      "uuid_download": "",
+      "uuid_upload": "",
+      "ubsId": "",
+      "userBw": 0
+    };
+
+    var statsCount = 0;
+    var previousRTT = 0;
+
+    function I(i) { return document.getElementById(i); }
+    function mbpsToAmount(s) {
+      return 1 - (1 / (Math.pow(1.3, Math.sqrt(s))));
     }
-    function format(d){
-        d=Number(d);
-        if(d<10) return d.toFixed(2);
-        if(d<100) return d.toFixed(1);
-        return d.toFixed(0);
+    function format(d) {
+      d = Number(d);
+      if (d < 10) return d.toFixed(2);
+      if (d < 100) return d.toFixed(1);
+      return d.toFixed(0);
     }
-    function oscillate(){
-      return 1+0.02*Math.sin(Date.now()/100);
+    function oscillate() {
+      return 1 + 0.02 * Math.sin(Date.now() / 100);
     }
 
     //CODE FOR GAUGES
-    function drawMeter(c,amount,bk,fg,progress,prog){
-      var ctx=c.getContext("2d");
-      var dp=window.devicePixelRatio||1;
-      var cw=c.clientWidth*dp, ch=c.clientHeight*dp;
-      var sizScale=ch*0.0055;
-      if(c.width==cw&&c.height==ch){
-        ctx.clearRect(0,0,cw,ch);
-      }else{
-        c.width=cw;
-        c.height=ch;
+    function drawMeter(c, amount, bk, fg, progress, prog) {
+      var ctx = c.getContext("2d");
+      var dp = window.devicePixelRatio || 1;
+      var cw = c.clientWidth * dp, ch = c.clientHeight * dp;
+      var sizScale = ch * 0.0055;
+      if (c.width == cw && c.height == ch) {
+        ctx.clearRect(0, 0, cw, ch);
+      } else {
+        c.width = cw;
+        c.height = ch;
       }
       ctx.beginPath();
-      ctx.strokeStyle=bk;
-      ctx.lineWidth=12*sizScale;
-      ctx.arc(c.width/2,c.height-58*sizScale,c.height/1.8-ctx.lineWidth,-Math.PI*1.1,Math.PI*0.1);
+      ctx.strokeStyle = bk;
+      ctx.lineWidth = 12 * sizScale;
+      ctx.arc(c.width / 2, c.height - 58 * sizScale, c.height / 1.8 - ctx.lineWidth, -Math.PI * 1.1, Math.PI * 0.1);
       ctx.stroke();
       ctx.beginPath();
-      ctx.strokeStyle=fg;
-      ctx.lineWidth=12*sizScale;
-      ctx.arc(c.width/2,c.height-58*sizScale,c.height/1.8-ctx.lineWidth,-Math.PI*1.1,amount*Math.PI*1.2-Math.PI*1.1);
+      ctx.strokeStyle = fg;
+      ctx.lineWidth = 12 * sizScale;
+      ctx.arc(c.width / 2, c.height - 58 * sizScale, c.height / 1.8 - ctx.lineWidth, -Math.PI * 1.1, amount * Math.PI * 1.2 - Math.PI * 1.1);
       ctx.stroke();
-      if(typeof progress !== "undefined"){
-        ctx.fillStyle=prog;
-        ctx.fillRect(c.width*0.3,c.height-16*sizScale,c.width*0.4*progress,4*sizScale);
+      if (typeof progress !== "undefined") {
+        ctx.fillStyle = prog;
+        ctx.fillRect(c.width * 0.3, c.height - 16 * sizScale, c.width * 0.4 * progress, 4 * sizScale);
       }
     }
 
-    function initUI(){
-      drawMeter(I("dlMeter"),0,meterBk,dlColor,0);
-      drawMeter(I("ulMeter"),0,meterBk,ulColor,0);
-      I("dlText").textContent="";
-      I("ulText").textContent="";
-      I("pingText").textContent="";
-      I("jitText").textContent="";
-      I("ip").textContent="";
+    function initUI() {
+      drawMeter(I("dlMeter"), 0, meterBk, dlColor, 0);
+      drawMeter(I("ulMeter"), 0, meterBk, ulColor, 0);
+      I("dlText").textContent = "";
+      I("ulText").textContent = "";
+      I("pingText").textContent = "";
+      I("jitText").textContent = "";
+      I("ip").textContent = "";
     }
 
-    function start(){
+    function start() {
       if (I("startStopBtn").className !== "running") {
         initUI();
-        runDownload(function() { runUpload(); })
-        I("startStopBtn").disabled=true;
-        I("startStopBtn").className="running";
+        runDownload(function () { runUpload(); })
+        I("startStopBtn").disabled = true;
+        I("startStopBtn").className = "running";
       }
     }
 
-    function stopped(){
-      I("startStopBtn").className="";
-      I("startStopBtn").disabled=false;
+    function stopped() {
+      I("startStopBtn").className = "";
+      I("startStopBtn").disabled = false;
     }
 
     //this function reads the data sent back by the test and updates the UI
-    function updateUI(info, type){
-      
-      var ipporta = info.ConnectionInfo.Client;
-      I("ip").textContent=ipporta.split(":")[0]; 
+    function updateUI(clientIp, elapsed, type, speed, rtt, jitter) {
+
+      I("ip").textContent = clientIp;
+
+      let progress = elapsed / 10e06;
 
       if (type === 'download') {
-        const elapsed = info.TCPInfo.ElapsedTime
-        let speed = info.TCPInfo.BytesAcked * 8
-        speed /= elapsed
-
-        let progress = elapsed / 10e06;
-
-        I("dlText").textContent=format(speed);
-        drawMeter(I("dlMeter"),mbpsToAmount(Number(speed)),meterBk,dlColor,Number(progress),progColor);
+        I("dlText").textContent = format(speed);
+        drawMeter(I("dlMeter"), mbpsToAmount(Number(speed)), meterBk, dlColor, Number(progress), progColor);
       }
 
       if (type === 'upload') {
-        const elapsed = info.TCPInfo.ElapsedTime
-        let speed = info.TCPInfo.BytesReceived * 8
-        speed /= elapsed
-
-        let progress = elapsed / 10e06;
-
-        I("ulText").textContent=format(speed);
-        drawMeter(I("ulMeter"),mbpsToAmount(Number(speed)),meterBk,ulColor,Number(progress),progColor);
+        I("ulText").textContent = format(speed);
+        drawMeter(I("ulMeter"), mbpsToAmount(Number(speed)), meterBk, ulColor, Number(progress), progColor);
       }
-            
-      const rtt = info.TCPInfo.RTT / 1e03;
-      const jitter = info.TCPInfo.RTTVar / 1e03;
-      I("pingText").textContent=format(rtt);
-      I("jitText").textContent=format(jitter);
+
+      I("pingText").textContent = format(rtt);
+      I("jitText").textContent = format(jitter);
+    }
+
+    function saveData(info, type) {
+
+      statsCount += 1;
+      var speed = 0;
+      var elapsed = 0;
+
+      //Basic Info
+      let clientIpPorta = info.ConnectionInfo.Client;
+      testResults.clientIp = clientIpPorta.split(":")[0];
+      testResults.clientPort = clientIpPorta.split(":")[1];
+      let serverIpPorta = info.ConnectionInfo.Server;
+      testResults.serverIp = serverIpPorta.split(":")[0];
+
+      if (type === 'download') {
+        elapsed = info.TCPInfo.ElapsedTime;
+        speed = info.TCPInfo.BytesAcked * 8;
+        speed /= elapsed;
+
+        let sent = info.TCPInfo.BytesSent;
+        let retrans = info.TCPInfo.BytesRetrans;
+
+        testResults.download = speed;
+        testResults.loss = retrans / sent;  //only on download
+
+        testResults.uuid_download = info.ConnectionInfo.UUID;
+      }
+
+      if (type === 'upload') {
+        elapsed = info.TCPInfo.ElapsedTime;
+        speed = info.TCPInfo.BytesReceived * 8;
+        speed /= elapsed;
+
+        testResults.upload = speed;
+
+        testResults.uuid_upload = info.ConnectionInfo.UUID;
+      }
+
+      let oldLatency = testResults.latency;
+      let newLatency = info.TCPInfo.RTT / 1e03;
+      testResults.latency += (newLatency - oldLatency) / statsCount;
+
+      // jitter requires 2 RTTs to calculate
+      if (statsCount > 1) {
+        let oldJitter = testResults.jitter;
+        let newJitter = Math.abs(newLatency - previousRTT);
+
+        testResults.jitter += (newJitter - oldJitter) / (statsCount - 1);
+      }
+      previousRTT = newLatency;
+
+      updateUI(testResults.clientIp, elapsed, type, speed, testResults.latency, testResults.jitter);
+
+      //@TODO
+      /*var testResults = {
+        "startTime": "",
+        "endTime": "",
+        "timestamp": "",
+        "ubsId": "",
+        "userBw": 0
+      };*/
     }
 
     function runSomething(testName, callback) {
-    ndt7core.run(location.href, testName, 
-      function(ev, val) {
-                console.log(ev, val)
-                if (ev === 'complete') {
-                  if (callback !== undefined) {
-                    callback()
-                  }
-                  if (val.Test === 'upload') {
-                    stopped()
-                  }
-                  return
-                }
-                if (ev === 'measurement' && val.Origin === 'server') {
-                  updateUI(val,val.Test)
-                }
-            })
+      ndt7core.run(location.href, testName,
+        function (ev, val) {
+          console.log(ev, val)
+          if (ev === 'complete') {
+            if (callback !== undefined) {
+              callback()
+            }
+            if (val.Test === 'upload') {
+              stopped()
+            }
+            return
+          }
+          if (ev === 'measurement' && val.Origin === 'server') {
+            saveData(val, val.Test)
+          }
+        })
     }
 
     function runDownload(callback) {
@@ -179,4 +251,5 @@
     initUI();
   </script>
 </body>
+
 </html>
