@@ -11,6 +11,11 @@
 
 <body>
   <h1>NDT-Server Example</h1>
+  <div id="inputs">
+    <div id="errorInput" style="color:#FF3030;text-align:center"></div><br>
+    <label>UBS ID:  </label><input id="ubsIdText" type="text" style="text-align:right;" size=15/>&nbsp;&nbsp;
+    <label>Banda Contratada:  </label><input id="bandaContratadaText" type="text" style="text-align:right;" size=10 /> Mb/s
+  </div>
   <div id="testWrapper">
     <button type="button" id="startStopBtn" onclick="start()"></button>
     <div id="test">
@@ -95,6 +100,7 @@
     function oscillate() {
       return 1 + 0.02 * Math.sin(Date.now() / 100);
     }
+    function isNumber(n) { return !isNaN(parseFloat(n)) && !isNaN(n - 0) }
 
     //CODE FOR GAUGES
     function drawMeter(c, amount, bk, fg, progress, prog) {
@@ -122,6 +128,24 @@
         ctx.fillStyle = prog;
         ctx.fillRect(c.width * 0.3, c.height - 16 * sizScale, c.width * 0.4 * progress, 4 * sizScale);
       }
+    }
+
+    function validateInputs() {
+      let ubsid = I("ubsIdText").value;
+      let bandaContratada = I("bandaContratadaText").value;
+      if (!isNumber(ubsid)) {
+        I("errorInput").textContent = "UBS ID Invalido!";
+        return false;
+      }
+      if (!isNumber(bandaContratada)) {
+        I("errorInput").textContent = "Banda Contratada Invalida!";
+        return false;
+      }
+      I("errorInput").textContent = "";
+
+      testResults.ubsId = ubsid;
+      testResults.userBw = bandaContratada;
+      return true;
     }
 
     function clearVariables() {
@@ -162,17 +186,20 @@
       if (I("startStopBtn").className !== "running") {
         clearVariables();
         initUI();
-        runDownload(function () { runUpload(); })
-        I("startStopBtn").disabled = true;
-        I("startStopBtn").className = "running";
-
-        testInterval = setInterval(updateUI, 500);
+        if (validateInputs()) {
+          testResults.startTime = new Date().getTime();
+          runDownload(function () { runUpload(); })
+          I("startStopBtn").disabled = true;
+          I("startStopBtn").className = "running";
+          testInterval = setInterval(updateUI, 500);
+        }
       }
     }
 
     function stopped() {
       I("startStopBtn").className = "";
       I("startStopBtn").disabled = false;
+      testResults.endTime = new Date().getTime();
       console.log(JSON.stringify(testResults));
       clearInterval(testInterval);
       //saveDataDB();
@@ -207,7 +234,7 @@
       let clientIpPorta = info.ConnectionInfo.Client.split(":");
       testResults.clientPort = clientIpPorta.pop();
       testResults.clientIp = clientIpPorta.join(":");
-      
+
       let serverIpPorta = info.ConnectionInfo.Server.split(":");
       serverIpPorta.pop();
       testResults.serverIp = serverIpPorta.join(":");
@@ -252,15 +279,6 @@
       //ref for maths and magics
       //http://datagenetics.com/blog/november22017/index.html
       //http://www.3rdechelon.net/jittercalc.asp
-
-      //@TODO
-      /*var testResults = {
-        "startTime": "",
-        "endTime": "",
-        "timestamp": "",
-        "ubsId": "",
-        "userBw": 0
-      };*/
     }
 
     function saveDataDB() {
