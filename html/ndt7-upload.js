@@ -1,60 +1,87 @@
 /* jshint esversion: 6, asi: true, worker: true */
 // WebWorker that runs the ndt7 upload test
-onmessage = function (ev) {
+onmessage = function (baseURL) {
   'use strict'
-  let url = new URL(ev.data.href)
-  url.protocol = (url.protocol === 'https:') ? 'wss:' : 'ws:'
-  const wsproto = 'net.measurementlab.ndt.v7'
-  url.pathname = '/ndt/v7/upload'
-  const sock = new WebSocket(url.toString(), wsproto)
-  sock.onclose = function () {
-    postMessage(null)
+
+  var testStart;
+  var totalSent = 0;
+  var updateInterval = 250; //ms
+  var nextCallback = updateInterval;
+  var testDuration = 10000; //10s
+  var dataToSend = new Uint8Array(1048576);  //SEND_BUFFER_SIZE
+  var keepSendingData;
+
+  let url = new URL(baseURL.data.href);
+  url.protocol = (url.protocol === 'https:') ? 'wss:' : 'ws:';
+  url.pathname = '/ndt/v7/upload';
+
+  const sock = new WebSocket(url.toString(), 'net.measurementlab.ndt.v7');
+
+  for (var i = 0; i < dataToSend.length; i += 1) {
+    // All the characters must be printable, and the printable range of
+    // ASCII is from 32 to 126.  101 is because we need a prime number.
+    dataToSend[i] = 32 + (i * 101) % (126 - 32);
   }
-  function uploader(socket, data, start, previous, total) {
-    let now = new Date().getTime()
-    const duration = 10000  // millisecond
-    if (now - start > duration) {
-      sock.close()
-      return
+
+  keepSendingData = function () {
+
+    var currentTime = Date.now();
+
+    // Monitor the buffersize as it sends and refill if it gets too low.
+    if (sock.bufferedAmount < 8192) {
+      sock.send(dataToSend);
+      totalSent += dataToSend.length;
     }
-    const maxMessageSize = 16777216 /* = (1<<24) = 16MB */
-    if (data.length < maxMessageSize && data.length < (total - sock.bufferedAmount)/16) {
-      data = new Uint8Array(data.length * 2) // TODO(bassosimone): fill this message
-    }
-    const underbuffered = 7 * data.length
-    while (sock.bufferedAmount < underbuffered) {
-      sock.send(data)
-      total += data.length
-    }
-    const every = 250  // millisecond
-    if (now - previous > every) {
+
+    if ((currentTime - 100) > (testStart + nextCallback)) {
+
+      let bytesSent = (totalSent - sock.bufferedAmount);
+      let elapsedTime = (currentTime - testStart); //ms
+
       postMessage({
         'AppInfo': {
-          'ElapsedTime': (now - start) * 1000,  // us
-          'NumBytes': (total - sock.bufferedAmount),
+          'Bytes': bytesSent,
+          'ElapsedTime': elapsedTime
         },
         'Origin': 'client',
         'Test': 'upload',
-      })
-      previous = now
+      });
+
+      nextCallback += updateInterval;
     }
-    setTimeout(
-      function() { uploader(sock, data, start, previous, total) },
-      0)
-  }
+
+    if (currentTime < testStart + testDuration) {
+      setTimeout(keepSendingData, 0);
+    } else {
+      return;
+    }
+  };
+
   sock.onopen = function () {
-    const initialMessageSize = 8192 /* (1<<13) */
-    const data = new Uint8Array(initialMessageSize) // TODO(bassosimone): fill this message
-    sock.binarytype = 'arraybuffer'
-    const start = new Date().getTime()
-    uploader(sock, data, start, start, 0)
-    sock.onmessage = function (ev) {
-      if (!(ev.data instanceof Blob)) {
-        let m = JSON.parse(ev.data)
-        m.Origin = 'server'
-        m.Test = 'upload'
-        postMessage(m)
-      }
+    testStart = Date.now();
+    keepSendingData();
+  };
+
+  sock.onmessage = function (response) {
+    if (!(response.data instanceof Blob)) {
+      let m = JSON.parse(response.data);
+      m.Origin = 'server';
+      m.Test = 'upload';
+      postMessage(m);
     }
-  }
+  };
+
+  sock.onclose = function () {
+    postMessage({
+      'Origin': 'close',
+      'Test': 'upload',
+    });
+  };
+
+  sock.onerror = function (response) {
+    let m = JSON.parse(response.data);
+    m.Origin = 'error';
+    m.Test = 'upload';
+    postMessage(m);
+  };
 }

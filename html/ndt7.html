@@ -6,15 +6,16 @@
   <script type='text/javascript' src='jquery-1.12.1.min.js'></script>
   <link rel="stylesheet" type="text/css" href="style.css">
   <meta charset='utf-8'>
-  <title>ndt7 Speed Test</title>
+  <title>Medidor RNP</title>
 </head>
 
 <body>
-  <h1>NDT-Server Example</h1>
+  <h1>Medidor RNP</h1>
   <div id="inputs">
     <div id="errorInput" style="color:#FF3030;text-align:center"></div><br>
-    <label>UBS ID:  </label><input id="ubsIdText" type="text" style="text-align:right;" size=15/>&nbsp;&nbsp;
-    <label>Banda Contratada:  </label><input id="bandaContratadaText" type="text" style="text-align:right;" size=10 /> Mb/s
+    <label>Código CNES: </label><input id="codigoCNESText" type="text" style="text-align:right;" size=15 />&nbsp;&nbsp;
+    <label>Banda Contratada: </label><input id="bandaContratadaText" type="text" style="text-align:right;" size=10 />
+    Mb/s
   </div>
   <div id="testWrapper">
     <button type="button" id="startStopBtn" onclick="start()"></button>
@@ -31,8 +32,8 @@
           <div class="unit">ms</div>
         </div>
         <div class="testArea2">
-          <div class="testName">Perda</div>
-          <div id="lossText" class="meterText" style="color:#AA6060"></div>
+          <div class="testName">Retransmissão</div>
+          <div id="retransText" class="meterText" style="color:#AA6060"></div>
           <div class="unit">%</div>
         </div>
       </div>
@@ -63,12 +64,18 @@
       ulColor = "#616161";
     var progColor = meterBk;
 
+    var lastServerResult;
+    var rtts = [];
+    var lostSegments = 0;
+    var clientDownloadBw, clientUploadBw;
+
     var testResults = {
       "download": 0,
       "upload": 0,
       "jitter": 0,
       "latency": 0,
-      "loss": 0,
+      "retransmissions": 0,
+      "segmentLoss": 0,
       "clientIp": "",
       "clientPort": "",
       "startTime": "",
@@ -77,15 +84,9 @@
       "timestamp": "",
       "uuidDownload": "",
       "uuidUpload": "",
-      "ubsId": "",
+      "cnesCode": "",
       "userBw": 0
     };
-
-    var statsCount = 0;
-    var previousRTT = 0;
-    var elapsedDownload = 0;
-    var elapsedUpload = 0;
-    var testInterval;
 
     function I(i) { return document.getElementById(i); }
     function mbpsToAmount(s) {
@@ -101,6 +102,20 @@
       return 1 + 0.02 * Math.sin(Date.now() / 100);
     }
     function isNumber(n) { return !isNaN(parseFloat(n)) && !isNaN(n - 0) }
+    function getAverage(array) {
+      var sum = 0;
+      for (var i = 0; i < array.length; i++) {
+        sum += Number(array[i]);
+      }
+      return (sum / array.length);
+    }
+    function calculateJitter(rtts) {
+      var variances = [];
+      for (var i = 1; i < rtts.length; i++) {
+        variances.push(Math.abs(Number(rtts[i] - Number(rtts[i - 1]))));
+      }
+      return getAverage(variances);
+    }
 
     //CODE FOR GAUGES
     function drawMeter(c, amount, bk, fg, progress, prog) {
@@ -131,19 +146,19 @@
     }
 
     function validateInputs() {
-      let ubsid = I("ubsIdText").value;
+      let cnesCode = I("codigoCNESText").value;
       let bandaContratada = I("bandaContratadaText").value;
-      if (!isNumber(ubsid)) {
-        I("errorInput").textContent = "UBS ID Invalido!";
+      if (!isNumber(cnesCode)) {
+        I("errorInput").textContent = "Código CNES Inválido!";
         return false;
       }
       if (!isNumber(bandaContratada)) {
-        I("errorInput").textContent = "Banda Contratada Invalida!";
+        I("errorInput").textContent = "Banda Contratada Inválida!";
         return false;
       }
       I("errorInput").textContent = "";
 
-      testResults.ubsId = ubsid;
+      testResults.cnesCode = cnesCode;
       testResults.userBw = bandaContratada;
       return true;
     }
@@ -154,7 +169,8 @@
         "upload": 0,
         "jitter": 0,
         "latency": 0,
-        "loss": 0,
+        "retransmissions": 0,
+        "segmentLoss": 0,
         "clientIp": "",
         "clientPort": "",
         "startTime": "",
@@ -163,13 +179,12 @@
         "timestamp": "",
         "uuidDownload": "",
         "uuidUpload": "",
-        "ubsId": "",
+        "cnesCode": "",
         "userBw": 0
       };
-      statsCount = 0;
-      previousRTT = 0;
-      elapsedDownload = 0;
-      elapsedUpload = 0;
+      lastServerResult = null;
+      rtts = [];
+      lostSegments = 0;
     }
 
     function initUI() {
@@ -179,106 +194,125 @@
       I("ulText").textContent = "";
       I("pingText").textContent = "";
       I("jitText").textContent = "";
+      I("retransText").textContent = "";
       I("ip").textContent = "";
     }
 
+    function runningUI() {
+      I("pingText").textContent = "--";
+      I("jitText").textContent = "--";
+      I("retransText").textContent = "--";
+      I("ip").textContent = "--";
+    }
+
     function start() {
+
       if (I("startStopBtn").className !== "running") {
+
         clearVariables();
         initUI();
+
         if (validateInputs()) {
-          testResults.startTime = new Date().getTime();
-          runDownload(function () { runUpload(); })
           I("startStopBtn").disabled = true;
           I("startStopBtn").className = "running";
-          testInterval = setInterval(updateUI, 500);
+
+          testResults.startTime = Date.now();
+          runDownload(function () { runUpload(); })
+
+          runningUI();
         }
       }
     }
 
-    function stopped() {
+    function stop() {
+
       I("startStopBtn").className = "";
       I("startStopBtn").disabled = false;
-      testResults.endTime = new Date().getTime();
+
+      updateFinalUI();
+      testResults.endTime = Date.now();
+
       console.log(JSON.stringify(testResults));
-      clearInterval(testInterval);
+
       //saveDataDB();
     }
 
+
+    function updateBandwidthUI(testType, testResults) {
+
+      let progress = Number(testResults.ElapsedTime) / 10000; //ms
+      let speed = (Number(testResults.Bytes) * 8) / (Number(testResults.ElapsedTime) * 1000); //Mbps
+
+      if (testType === 'download') {
+        clientDownloadBw = speed;
+        I("dlText").textContent = format(speed);
+        drawMeter(I("dlMeter"), mbpsToAmount(Number(speed)), meterBk, dlColor, Number(progress), progColor);
+      }
+      if (testType === 'upload') {
+        clientUploadBw = speed;
+        I("ulText").textContent = format(speed);
+        drawMeter(I("ulMeter"), mbpsToAmount(Number(speed)), meterBk, ulColor, Number(progress), progColor);
+      }
+    }
+
+    function saveServerData(info) {
+      rtts.push(info.TCPInfo.RTT);
+      lostSegments += info.TCPInfo.Lost;
+      lastServerResult = info;
+    }
+
+    function saveDownloadProgress() {
+      if (lastServerResult !== null) {
+
+        testResults.retransmissions = lastServerResult.TCPInfo.BytesRetrans / lastServerResult.TCPInfo.BytesSent;
+        testResults.segmentLoss = lostSegments / lastServerResult.TCPInfo.SegsIn;
+        console.log({"retrans": testResults.retransmissions, "loss": testResults.segmentLoss});
+
+        serverBW = (lastServerResult.TCPInfo.BytesAcked * 8) / lastServerResult.TCPInfo.ElapsedTime;
+        console.log({ "test": "Download", "serverBW": serverBW, "clientBW": clientDownloadBw });
+
+        testResults.download = clientDownloadBw;
+
+        testResults.uuidDownload = lastServerResult.ConnectionInfo.UUID;
+
+        let clientIpPorta = lastServerResult.ConnectionInfo.Client.split(":");
+        testResults.clientPort = clientIpPorta.pop();
+        testResults.clientIp = clientIpPorta.join(":");
+
+        let serverIpPorta = lastServerResult.ConnectionInfo.Server.split(":");
+        serverIpPorta.pop();
+        testResults.serverIp = serverIpPorta.join(":");
+
+        //could save rtt from download here
+      }
+    }
+
+    function saveUploadProgress() {
+      if (lastServerResult !== null) {
+
+        serverBW = (lastServerResult.TCPInfo.BytesReceived * 8) / lastServerResult.TCPInfo.ElapsedTime;
+        console.log({ "test": "Upload", "serverBW": serverBW, "clientBW": clientUploadBw });
+
+        testResults.upload = serverBW;
+
+        testResults.uuidUpload = lastServerResult.ConnectionInfo.UUID;
+
+        testResults.latency = getAverage(rtts) / 1000.0;
+        testResults.jitter = calculateJitter(rtts) / 1000.0;
+      }
+    }
+
     //this function reads the data sent back by the test and updates the UI
-    function updateUI() {
+    function updateFinalUI() {
 
-      I("ip").textContent = testResults.clientIp;
+      I("ip").textContent = "IP do Cliente: " + testResults.clientIp;
 
-      let progDownload = elapsedDownload / 10e06;
-
-      I("dlText").textContent = format(testResults.download);
-      drawMeter(I("dlMeter"), mbpsToAmount(Number(testResults.download)), meterBk, dlColor, Number(progDownload), progColor);
-
-      let progUpload = elapsedUpload / 10e06;
-
+      //I("dlText").textContent = format(testResults.download);
       I("ulText").textContent = format(testResults.upload);
-      drawMeter(I("ulMeter"), mbpsToAmount(Number(testResults.upload)), meterBk, ulColor, Number(progUpload), progColor);
 
       I("pingText").textContent = format(testResults.latency);
       I("jitText").textContent = format(testResults.jitter);
-      I("lossText").textContent = format(testResults.loss * 100);
-    }
-
-    function saveData(info, type) {
-
-      statsCount += 1;
-      var speed = 0;
-
-      //Basic Info
-      let clientIpPorta = info.ConnectionInfo.Client.split(":");
-      testResults.clientPort = clientIpPorta.pop();
-      testResults.clientIp = clientIpPorta.join(":");
-
-      let serverIpPorta = info.ConnectionInfo.Server.split(":");
-      serverIpPorta.pop();
-      testResults.serverIp = serverIpPorta.join(":");
-
-      if (type === 'download') {
-        elapsedDownload = info.TCPInfo.ElapsedTime;
-        speed = info.TCPInfo.BytesAcked * 8;
-        speed /= elapsedDownload;
-
-        let sent = info.TCPInfo.BytesSent;
-        let retrans = info.TCPInfo.BytesRetrans;
-
-        testResults.download = speed;
-        testResults.loss = retrans / sent;  //only on download
-
-        testResults.uuidDownload = info.ConnectionInfo.UUID;
-      }
-
-      if (type === 'upload') {
-        elapsedUpload = info.TCPInfo.ElapsedTime;
-        speed = info.TCPInfo.BytesReceived * 8;
-        speed /= elapsedUpload;
-
-        testResults.upload = speed;
-
-        testResults.uuidUpload = info.ConnectionInfo.UUID;
-      }
-
-      let oldLatency = testResults.latency;
-      let newLatency = info.TCPInfo.RTT / 1e03;
-      testResults.latency += (newLatency - oldLatency) / statsCount;
-
-      // jitter requires 2 RTTs to calculate
-      if (statsCount > 1) {
-        let oldJitter = testResults.jitter;
-        let newJitter = Math.abs(newLatency - previousRTT);
-
-        testResults.jitter += (newJitter - oldJitter) / (statsCount - 1);
-      }
-      previousRTT = newLatency;
-
-      //ref for maths and magics
-      //http://datagenetics.com/blog/november22017/index.html
-      //http://www.3rdechelon.net/jittercalc.asp
+      I("retransText").textContent = format(testResults.retransmissions * 100);
     }
 
     function saveDataDB() {
@@ -297,19 +331,28 @@
 
     function runSomething(testName, callback) {
       ndt7core.run(location.href, testName,
-        function (ev, val) {
-          console.log(ev, val)
-          if (ev === 'complete') {
+        function (type, response) {
+          if (type === 'complete') {
+            if (response.Test === 'download') {
+              console.log(type, response);
+              saveDownloadProgress();
+            }
+            if (response.Test === 'upload') {
+              console.log(type, response);
+              saveUploadProgress();
+              stop();
+            }
             if (callback !== undefined) {
               callback()
             }
-            if (val.Test === 'upload') {
-              stopped()
-            }
             return
           }
-          if (ev === 'measurement' && val.Origin === 'server') {
-            saveData(val, val.Test)
+          if (type === 'measurement' && response.Origin === 'client') {
+            updateBandwidthUI(response.Test, response.AppInfo);
+          }
+          if (type === 'measurement' && response.Origin === 'server') {
+            console.log(type, response);
+            saveServerData(response);
           }
         })
     }

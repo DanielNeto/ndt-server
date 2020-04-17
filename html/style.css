@@ -33,10 +33,10 @@ h1{
   color:#FFFFFF;
 }
 #startStopBtn:before{
-  content:"Start";
+  content:"Início";
 }
 #startStopBtn.running:before{
-  content:"Running";
+  content:"Executando";
 }
 #test{
   margin-top:2em;
