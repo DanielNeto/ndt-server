@@ -13,9 +13,14 @@
   <h1>Medidor RNP</h1>
   <div id="inputs">
     <div id="errorInput" style="color:#FF3030;text-align:center"></div><br>
-    <label>Código CNES: </label><input id="codigoCNESText" type="text" style="text-align:right;" size=15 />&nbsp;&nbsp;
-    <label>Banda Contratada: </label><input id="bandaContratadaText" type="text" style="text-align:right;" size=10 />
-    Mb/s
+    <div class="inputGroup">
+      <div class="inputArea">Código CNES: <input id="codigoCNESText" type="text" class="inputcnes" /></div>
+      <div class="inputArea">Banda Contratada: <input id="bandaContratadaText" type="text"
+          class="inputbanda" />&nbsp;Mb/s</div>
+    </div>
+    <div class="inputGroup">
+      <div class="inputArea">Localização: <select id="estados-select" style="font-size: 1em;"></select></div>
+    </div>
   </div>
   <div id="testWrapper">
     <button type="button" id="startStopBtn" onclick="start()"></button>
@@ -60,8 +65,8 @@
     /* jshint esversion: 6, asi: true */
     /* globals ndt7core */
     var meterBk = /Trident.*rv:(\d+\.\d+)/i.test(navigator.userAgent) ? "#EAEAEA" : "#80808040";
-    var dlColor = "#6060AA",
-      ulColor = "#616161";
+    var dlColor = "#4cbb17",
+      ulColor = "#ff7417";
     var progColor = meterBk;
 
     var lastServerResult;
@@ -84,8 +89,38 @@
       "timestamp": "",
       "uuidDownload": "",
       "uuidUpload": "",
-      "cnesCode": "",
+      "ubsId": "",
       "userBw": 0
+    };
+
+    var estadosArray = {
+      'ac.medidor.rnp.br': 'Acre',
+      'al.medidor.rnp.br': 'Alagoas',
+      'ap.medidor.rnp.br': 'Amapá',
+      'am.medidor.rnp.br': 'Amazonas',
+      'ba.medidor.rnp.br': 'Bahia',
+      'ce.medidor.rnp.br': 'Ceará',
+      'df.medidor.rnp.br': 'Distrito Federal',
+      'es.medidor.rnp.br': 'Espírito Santo',
+      'go.medidor.rnp.br': 'Goiás',
+      'ma.medidor.rnp.br': 'Maranhão',
+      'mt.medidor.rnp.br': 'Mato Grosso',
+      'ms.medidor.rnp.br': 'Mato Grosso do Sul',
+      'mg.medidor.rnp.br': 'Minas Gerais',
+      'pa.medidor.rnp.br': 'Pará',
+      'pb.medidor.rnp.br': 'Paraíba',
+      'pr.medidor.rnp.br': 'Paraná',
+      'pe.medidor.rnp.br': 'Pernambuco',
+      'pi.medidor.rnp.br': 'Piauí',
+      'rj.medidor.rnp.br': 'Rio de Janeiro',
+      'rn.medidor.rnp.br': 'Rio Grande do Norte',
+      'rs.medidor.rnp.br': 'Rio Grande do Sul',
+      'ro.medidor.rnp.br': 'Rondônia',
+      'rr.medidor.rnp.br': 'Roraima',
+      'sc.medidor.rnp.br': 'Santa Catarina',
+      'sp.medidor.rnp.br': 'São Paulo',
+      'se.medidor.rnp.br': 'Sergipe',
+      'to.medidor.rnp.br': 'Tocantins'
     };
 
     function I(i) { return document.getElementById(i); }
@@ -158,7 +193,7 @@
       }
       I("errorInput").textContent = "";
 
-      testResults.cnesCode = cnesCode;
+      testResults.ubsId = cnesCode;
       testResults.userBw = bandaContratada;
       return true;
     }
@@ -179,7 +214,7 @@
         "timestamp": "",
         "uuidDownload": "",
         "uuidUpload": "",
-        "cnesCode": "",
+        "ubsId": "",
         "userBw": 0
       };
       lastServerResult = null;
@@ -188,6 +223,15 @@
     }
 
     function initUI() {
+      resetUI();
+      var select = I("estados-select");
+      select.options.length = 0;
+      for (index in estadosArray) {
+        select.options[select.options.length] = new Option(estadosArray[index], index);
+      }
+    }
+
+    function resetUI() {
       drawMeter(I("dlMeter"), 0, meterBk, dlColor, 0);
       drawMeter(I("ulMeter"), 0, meterBk, ulColor, 0);
       I("dlText").textContent = "";
@@ -210,14 +254,17 @@
       if (I("startStopBtn").className !== "running") {
 
         clearVariables();
-        initUI();
+        resetUI();
+
+        console.log();
 
         if (validateInputs()) {
           I("startStopBtn").disabled = true;
           I("startStopBtn").className = "running";
-
+          let estado = I("estados-select");
+          let servidor = estado.options[estado.selectedIndex].value;
           testResults.startTime = Date.now();
-          runDownload(function () { runUpload(); })
+          runDownload(servidor, function () { runUpload(servidor, null); })
 
           runningUI();
         }
@@ -266,7 +313,7 @@
 
         testResults.retransmissions = lastServerResult.TCPInfo.BytesRetrans / lastServerResult.TCPInfo.BytesSent;
         testResults.segmentLoss = lostSegments / lastServerResult.TCPInfo.SegsIn;
-        console.log({"retrans": testResults.retransmissions, "loss": testResults.segmentLoss});
+        console.log({ "retrans": testResults.retransmissions, "loss": testResults.segmentLoss });
 
         serverBW = (lastServerResult.TCPInfo.BytesAcked * 8) / lastServerResult.TCPInfo.ElapsedTime;
         console.log({ "test": "Download", "serverBW": serverBW, "clientBW": clientDownloadBw });
@@ -315,22 +362,25 @@
       I("retransText").textContent = format(testResults.retransmissions * 100);
     }
 
+    function response(data) {
+      console.log("Response form server: " + data);
+    }
     function saveDataDB() {
-      $.ajax("/ubs", {
-        data: JSON.stringify(testResults),
-        method: "POST",
+      $.ajax("http://medidor.rnp.br:8080/ubs", {
+        data: JSON.stringify(
+          testResults
+        ),
+        dataType: "jsonp",
+        jsonpCallback: 'response',
         contentType: "application/json",
         success: function (data, status, xhr) {// success callback function
           console.log("Data saved!")
-        },
-        error: function (a, b, c) {
-          console.log("Data not saved!")
         }
       });
     }
 
-    function runSomething(testName, callback) {
-      ndt7core.run(location.href, testName,
+    function runSomething(testName, servidor, callback) {
+      ndt7core.run(servidor, testName,
         function (type, response) {
           if (type === 'complete') {
             if (response.Test === 'download') {
@@ -342,7 +392,7 @@
               saveUploadProgress();
               stop();
             }
-            if (callback !== undefined) {
+            if (callback !== null) {
               callback()
             }
             return
@@ -357,12 +407,12 @@
         })
     }
 
-    function runDownload(callback) {
-      runSomething('download', callback)
+    function runDownload(servidor, callback) {
+      runSomething('download', servidor, callback)
     }
 
-    function runUpload(callback) {
-      runSomething('upload', callback)
+    function runUpload(servidor, callback) {
+      runSomething('upload', servidor, callback)
     }
     initUI();
   </script>

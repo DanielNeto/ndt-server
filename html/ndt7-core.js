@@ -4,7 +4,7 @@ const ndt7core = (function () {
   return {
     // run runs the specified test with the specified base URL and calls
     // callback to notify the caller of ndt7 events.
-    run: function (baseURL, testName, callback) {
+    run: function (servidor, testName, callback) {
 
       callback('starting', { Origin: 'client', Test: testName })
 
@@ -35,6 +35,8 @@ const ndt7core = (function () {
       // Kill the worker after the timeout. This force the browser to
       // close the WebSockets and prevent too-long tests.
       setTimeout(function () { worker.terminate(); finish(); }, 15000);
+
+      var baseURL = "https://".concat(servidor, ":4443");
 
       worker.postMessage({ href: baseURL, })
     }
