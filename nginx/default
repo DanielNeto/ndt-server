@@ -3,12 +3,21 @@
 server {
 	listen 80 default_server;
 	listen [::]:80 default_server;
-        return 301 https://$hostname:4443/static/ndt7.html;
+	return 301 https://$host$request_uri;
 }
 server {
-        listen 443 ssl default_server;
-        listen [::]:443 ssl default_server;
-        ssl_certificate /certs/wildcard_medidor.rnp.br.cer;
-        ssl_certificate_key /certs/wildcard_medidor.rnp.br.key;
-        return 301 https://$hostname:4443/static/ndt7.html;
+	listen 443 ssl default_server;
+	listen [::]:443 ssl default_server;
+
+	ssl on;
+
+	ssl_certificate /certs/wildcard_medidor.rnp.br.cer;
+	ssl_certificate_key /certs/wildcard_medidor.rnp.br.key;
+
+	root /html;
+	index index.html;
+
+	location / {
+		try_files $uri $uri/ =404;
+	}
 }

@@ -1,11 +1,14 @@
 version: "3.7"
 services:
   ndt-server:
-    image: danielneto/ndt-server:1.0
+    image: danielneto/ndt-server:2.0
     build:
       context: ./
     container_name: ndt-server
     hostname: teste.medidor.br
+    networks:
+      ndt-network:
+        ipv4_address: 192.168.50.10
     tty: true
     stdin_open: true
     volumes:
@@ -14,8 +17,8 @@ services:
       - $PWD/datadir:/datadir:rw
       - $PWD/var-local:/var/local:rw
     command: [
-      "-cert", "/certs/cert.pem",
-      "-key", "/certs/key.pem",
+      "-cert", "/certs/wildcard_medidor.rnp.br.cer",
+      "-key", "/certs/wildcard_medidor.rnp.br.key",
       "-datadir", "/datadir",
       "-ndt7_addr", ":4443",
       "-ndt7_addr_cleartext", ":8080"
@@ -23,3 +26,11 @@ services:
     environment:
       TZ: "America/Sao_Paulo"
       container: "docker"
+
+networks:
+  ndt-network:
+    name: ndt-network
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.50.0/24
