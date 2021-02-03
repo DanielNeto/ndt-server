@@ -6,6 +6,8 @@ services:
       context: ./
     container_name: ndt-server
     hostname: teste.medidor.br
+    cap_add:
+      - NET_BIND_SERVICE
     networks:
       ndt-network:
         ipv4_address: 192.168.50.10
